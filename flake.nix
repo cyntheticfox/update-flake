@@ -1,0 +1,99 @@
+{
+  description = "A script to try to methodically test and rollback on each input upgrade";
+
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+    flake-utils.url = "github:numtide/flake-utils/v1.0.0";
+  };
+
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      ...
+    }:
+    # TODO: check if this works outside of defaults
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in
+      {
+        apps = {
+          default = self.apps.${system}.parse-and-update-flake;
+
+          parse-and-update-flake = flake-utils.lib.mkApp {
+            drv = self.packages.${system}.parse-and-update-flake;
+          };
+        };
+
+        packages =
+          let
+            writeJq =
+              with pkgs.writers;
+              let
+                interpreter = "${pkgs.jq}/bin/jq -jf";
+              in
+              name: argsOrScript:
+              if builtins.isAttrs argsOrScript && !builtins.isDerivation argsOrScript then
+                makeScriptWriter (argsOrScript // { inherit interpreter; }) name
+              else
+                makeScriptWriter { inherit interpreter; } name argsOrScript;
+
+            writeJqBin = name: writeJq "/bin/${name}";
+          in
+          {
+            default = self.packages.${system}.parse-and-update-flake;
+
+            parse-and-update-flake =
+              pkgs.writers.writeDashBin "parse-and-update-flake"
+                {
+                  makeWrapperArgs = [
+                    "--prefix"
+                    "PATH"
+                    ":"
+                    (nixpkgs.lib.makeBinPath [
+                      pkgs.coreutils
+                      self.packages.${system}.parse-flake-inputs
+                      self.packages.${system}.update-flake
+                    ])
+                  ];
+                }
+                ''
+                  # For some reason, Lix refuses to not do string interpolation in lines
+                  FLAKE_DIR="${"\${1:-.}"}"
+                  FLAKE_FILE="$FLAKE_DIR/flake.lock"
+                  TEMP_FILE=$(mktemp)
+
+                  echo "Parsing $FLAKE_FILE to CSV"
+                  parse-flake-inputs "$FLAKE_FILE" > "$TEMP_FILE"
+
+                  echo "Attempting upgrades"
+                  update-flake "$FLAKE_DIR" "$TEMP_FILE"
+
+                  rm "$TEMP_FILE"
+                '';
+
+            parse-flake-inputs = writeJqBin "parse-flake-inputs" (builtins.readFile ./parse-flake-inputs.jq);
+
+            update-flake = pkgs.writers.writeBashBin "update-flake" {
+              makeWrapperArgs = [
+                "--prefix"
+                "PATH"
+                ":"
+                (nixpkgs.lib.makeBinPath (
+                  with pkgs;
+                  [
+                    coreutils
+                    curl
+                    nix
+                  ]
+                ))
+              ];
+            } (builtins.readFile ./update-flake.sh);
+          };
+      }
+    );
+}
