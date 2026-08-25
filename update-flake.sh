@@ -103,7 +103,7 @@ for INPUT in $INPUTS_FILE; do
             continue
         fi
     else
-        echo "Unable to check without updating for "$INPUT_TYPE" type. Assuming success."
+        echo "Unable to check without updating for \"$INPUT_TYPE\" type. Assuming success."
     fi
 
     ORIGINAL_FLAKE=$(<"$LOCKFILE")
