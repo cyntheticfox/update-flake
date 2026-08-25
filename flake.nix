@@ -29,6 +29,12 @@
           };
         };
 
+        checks = self.packages.${system};
+
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [ shellcheck dash bash jq ];
+        };
+
         packages =
           let
             writeJq =
