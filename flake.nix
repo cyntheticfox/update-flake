@@ -82,25 +82,56 @@
                   update-flake "$FLAKE_DIR" "$TEMP_FILE"
 
                   rm "$TEMP_FILE"
-                '';
+                ''
+              // {
+                meta = {
+                  description = "Script to update a flake given a path to a flake.";
+                  homepage = "https://git.sr.ht/~cyntheticfox/update-flake";
+                  license = nixpkgs.lib.licenses.bsd3;
+                  maintainers = [ nixpkgs.lib.cyntheticfox ];
+                  mainProgram = "parse-and-update-flake";
+                };
+              };
 
-            parse-flake-inputs = writeJqBin "parse-flake-inputs" (builtins.readFile ./parse-flake-inputs.jq);
+            parse-flake-inputs =
+              writeJqBin "parse-flake-inputs" (builtins.readFile ./parse-flake-inputs.jq)
+              // {
+                meta = {
+                  description = "Script to parse `flake.nix` into a CSV of update information.";
+                  homepage = "https://git.sr.ht/~cyntheticfox/update-flake";
+                  license = nixpkgs.lib.licenses.bsd3;
+                  maintainers = [ nixpkgs.lib.cyntheticfox ];
+                  mainProgram = "parse-flake-inputs";
+                };
+              };
 
-            update-flake = pkgs.writers.writeBashBin "update-flake" {
-              makeWrapperArgs = [
-                "--prefix"
-                "PATH"
-                ":"
-                (nixpkgs.lib.makeBinPath (
-                  with pkgs;
-                  [
-                    coreutils
-                    curl
-                    nix
-                  ]
-                ))
-              ];
-            } (builtins.readFile ./update-flake.sh);
+            update-flake =
+              pkgs.writers.writeBashBin "update-flake" {
+                check = "${lib.getExe pkgs.shellcheck} --shell=bash";
+
+                makeWrapperArgs = [
+                  "--prefix"
+                  "PATH"
+                  ":"
+                  (lib.makeBinPath (
+                    with pkgs;
+                    [
+                      coreutils
+                      curl
+                      nix
+                    ]
+                  ))
+                ];
+              } (builtins.readFile ./update-flake.sh)
+              // {
+                meta = {
+                  description = "Script to update a flake given a CSV of update information.";
+                  homepage = "https://git.sr.ht/~cyntheticfox/update-flake";
+                  license = nixpkgs.lib.licenses.bsd3;
+                  maintainers = [ nixpkgs.lib.cyntheticfox ];
+                  mainProgram = "update-flake";
+                };
+              };
           };
       }
     );
