@@ -37,13 +37,15 @@
 
         packages =
           let
+            lib = nixpkgs.lib;
+
             writeJq =
               with pkgs.writers;
               let
                 interpreter = "${pkgs.jq}/bin/jq -jf";
               in
               name: argsOrScript:
-              if builtins.isAttrs argsOrScript && !builtins.isDerivation argsOrScript then
+              if builtins.isAttrs argsOrScript && !lib.isDerivation argsOrScript then
                 makeScriptWriter (argsOrScript // { inherit interpreter; }) name
               else
                 makeScriptWriter { inherit interpreter; } name argsOrScript;
