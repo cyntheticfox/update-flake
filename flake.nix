@@ -37,7 +37,7 @@
 
         packages =
           let
-            lib = nixpkgs.lib;
+            inherit (nixpkgs) lib;
 
             writeJq =
               with pkgs.writers;
@@ -63,7 +63,7 @@
                     "--prefix"
                     "PATH"
                     ":"
-                    (nixpkgs.lib.makeBinPath [
+                    (lib.makeBinPath [
                       pkgs.coreutils
                       self.packages.${system}.parse-flake-inputs
                       self.packages.${system}.update-flake
@@ -88,8 +88,8 @@
                 meta = {
                   description = "Script to update a flake given a path to a flake.";
                   homepage = "https://git.sr.ht/~cyntheticfox/update-flake";
-                  license = nixpkgs.lib.licenses.bsd3;
-                  maintainers = [ nixpkgs.lib.cyntheticfox ];
+                  license = lib.licenses.bsd3;
+                  maintainers = with lib.maintainers; [ cyntheticfox ];
                   mainProgram = "parse-and-update-flake";
                 };
               };
@@ -100,8 +100,8 @@
                 meta = {
                   description = "Script to parse `flake.nix` into a CSV of update information.";
                   homepage = "https://git.sr.ht/~cyntheticfox/update-flake";
-                  license = nixpkgs.lib.licenses.bsd3;
-                  maintainers = [ nixpkgs.lib.cyntheticfox ];
+                  license = lib.licenses.bsd3;
+                  maintainers = with lib.maintainers; [ cyntheticfox ];
                   mainProgram = "parse-flake-inputs";
                 };
               };
@@ -128,8 +128,8 @@
                 meta = {
                   description = "Script to update a flake given a CSV of update information.";
                   homepage = "https://git.sr.ht/~cyntheticfox/update-flake";
-                  license = nixpkgs.lib.licenses.bsd3;
-                  maintainers = [ nixpkgs.lib.cyntheticfox ];
+                  license = lib.licenses.bsd3;
+                  maintainers = with lib.maintainers; [ cyntheticfox ];
                   mainProgram = "update-flake";
                 };
               };
