@@ -58,6 +58,7 @@
             parse-and-update-flake =
               pkgs.writers.writeDashBin "parse-and-update-flake"
                 {
+                  check = "${lib.getExe pkgs.shellcheck} --shell=sh";
                   makeWrapperArgs = [
                     "--prefix"
                     "PATH"
