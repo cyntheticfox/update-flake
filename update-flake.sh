@@ -8,7 +8,8 @@ readonly FLAKE_DIR="${1:-.}"
 # Hardly good practice, but some tools like `nix flake check` don't support flake refs, just the current directory
 pushd "$FLAKE_DIR" 1> /dev/null || exit 3
 
-readonly LOCKFILE="$FLAKE_DIR/flake.lock"
+readonly LOCK_FILE="$FLAKE_DIR/flake.lock"
+readonly FLAKE_FILE="$FLAKE_DIR/flake.nix"
 INPUTS_FILE=$(cat "${2:-inputs.csv}")
 INPUTS_FILE="${INPUTS_FILE#*
 }"
@@ -55,34 +56,21 @@ print_final_update_result_md() {
     return 0
 }
 
-GENERAL_FLAGS=(
-    "--accept-flake-config"
-    "--no-warn-dirty"
-)
-
 # TODO: Waiting on https://github.com/NixOS/nix/issues/6453#issuecomment-1518117282 to ignore custom outputs
 # TODO: Waiting on https://github.com/NixOS/nix/issues/7230 for hiding saved value use
-FLAKE_CHECK_FLAGS=(
-    "${GENERAL_FLAGS[@]}"
-    "--no-update-lock-file"
-    "--no-write-lock-file"
-    "--no-use-registries"
-)
 
-readonly CHECK_UPDATE_CMD='curl --location --silent'
-readonly UPDATE_INPUT_CMD="nix flake update ${GENERAL_FLAGS[*]} --flake $FLAKE_DIR"
-# UPDATE_INPUT_CMD="nix flake lock ${GENERAL_FLAGS[*]} --update-input"
-# EVAL_CHECK_CMD="nix flake check --no-build ${FLAKE_CHECK_FLAGS[*]}"
-readonly BUILD_CHECK_CMD="nix flake check ${FLAKE_CHECK_FLAGS[*]}"
+EXTRA_EXPERIMENTAL_FEATURES="$(nix -L --extra-experimental-features 'nix-command' eval --read-only --file "$FLAKE_FILE" 'nixConfig.extra-experimental-features' --raw || printf '%s' 'flakes nix-command')"
+readonly EXTRA_EXPERIMENTAL_FEATURES="${EXTRA_EXPERIMENTAL_FEATURES%%
+}"
 
-if [ ! -f "$LOCKFILE" ]; then
-    printf 'Cannot find lock file "%s".\n' "$LOCKFILE"
+if [ ! -f "$LOCK_FILE" ]; then
+    printf 'Cannot find lock file "%s".\n' "$LOCK_FILE"
     exit 1
-elif [ ! -r "$LOCKFILE" ]; then
-    printf 'Lock file "%s" is not readable.\n' "$LOCKFILE"
+elif [ ! -r "$LOCK_FILE" ]; then
+    printf 'Lock file "%s" is not readable.\n' "$LOCK_FILE"
     exit 7
-elif [ ! -w "$LOCKFILE" ]; then
-    printf 'Lock file "%s" is not writable.\n' "$LOCKFILE"
+elif [ ! -w "$LOCK_FILE" ]; then
+    printf 'Lock file "%s" is not writable.\n' "$LOCK_FILE"
     exit 8
 fi
 
@@ -108,7 +96,7 @@ for INPUT in $INPUTS_FILE; do
     printf 'Checking for available update for "%s"\n' "$INPUT_NAME"
 
     if [ "$INPUT_TYPE" == 'github' ]; then
-        RESPONSE=$($CHECK_UPDATE_CMD -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "$INPUT_URL")
+        RESPONSE=$(curl --location --silent -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "$INPUT_URL")
 
         # Pretty sure this is how to do it...
         # shellcheck disable=SC2181
@@ -130,7 +118,7 @@ for INPUT in $INPUTS_FILE; do
             continue
         fi
     elif [ "$INPUT_TYPE" == 'gitlab' ] || [ "$INPUT_TYPE" == 'sourcehut' ]; then
-        RESPONSE=$($CHECK_UPDATE_CMD -H 'Accept: application/json' "$INPUT_URL")
+        RESPONSE=$(curl --location --silent -H 'Accept: application/json' "$INPUT_URL")
 
         # shellcheck disable=SC2181
         if [ $? -ne 0 ]; then
@@ -154,13 +142,13 @@ for INPUT in $INPUTS_FILE; do
         printf 'Unable to check "%s" without attempting update for "%s" type. Assuming update available.\n' "$INPUT_NAME" "$INPUT_TYPE"
     fi
 
-    ORIGINAL_FLAKE="$(cat "$LOCKFILE")"
+    ORIGINAL_FLAKE="$(cat "$LOCK_FILE")"
 
     printf 'Attempting to update "%s".\n' "$INPUT_NAME"
 
-    if ! $UPDATE_INPUT_CMD "$INPUT_NAME" "${NIX_FLAKE_FLAGS[@]}"; then
+    if ! nix -L --extra-experimental-features "$EXTRA_EXPERIMENTAL_FEATURES" flake update "${GENERAL_FLAGS[@]}" --flake "$FLAKE_DIR" "$INPUT_NAME" --accept-flake-config --no-warn-dirty; then
         printf 'Unable to update input "%s".\n' "$INPUT_NAME"
-        printf '%s' "$ORIGINAL_FLAKE" >"$LOCKFILE"
+        printf '%s' "$ORIGINAL_FLAKE" >"$LOCK_FILE"
 
         FAIL+=("$INPUT_NAME: Update failed")
 
@@ -171,9 +159,9 @@ for INPUT in $INPUTS_FILE; do
 
     # TODO: Find way around IFD
     #
-    # if ! $EVAL_CHECK_CMD; then
+    # if nix -L --extra-experimental-features "$EXTRA_EXPERIMENTAL_FEATURES" flake check --no-build --accept-flake-config --no-warn-dirty --no-update-lock-file --no-write-lock-file --no-use-registries; then
     #     printf 'Check eval for updated input "%s" failed.\n' "$INPUT_NAME"
-    #     printf '%s' "$ORIGINAL_FLAKE" >$LOCKFILE
+    #     printf '%s' "$ORIGINAL_FLAKE" >$LOCK_FILE
     #
     #     FAIL+=("$INPUT_NAME: Check eval failed")
     #
@@ -183,9 +171,9 @@ for INPUT in $INPUTS_FILE; do
     # NOTE: This only works on the current $SYSTEM
     printf 'Testing flake outputs build for "%s".\n' "$INPUT_NAME"
 
-    if ! $BUILD_CHECK_CMD; then
+    if ! nix -L --extra-experimental-features "$EXTRA_EXPERIMENTAL_FEATURES" flake check --accept-flake-config --no-warn-dirty --no-update-lock-file --no-write-lock-file --no-use-registries; then
         printf 'Check build for updated input "%s" failed.\n' "$INPUT_NAME"
-        printf '%s' "$ORIGINAL_FLAKE" >"$LOCKFILE"
+        printf '%s' "$ORIGINAL_FLAKE" >"$LOCK_FILE"
 
         FAIL+=("$INPUT_NAME: Check build failed")
 
@@ -196,11 +184,20 @@ for INPUT in $INPUTS_FILE; do
 done
 
 # Assuming a reasonable max of 2
-printf '\n=================\n# Update Results\n\nUpdate flake script completed.\n\n'
-print_final_update_result_md 'NONE' "${NONE[@]}"
-print_final_update_result_md 'PASS' "${PASS[@]}"
-print_final_update_result_md 'FAIL' "${FAIL[@]}"
-printf '=================\n'
+printf "
+=================
+# Update Results
+
+Update flake script completed.
+
+%s
+
+%s
+
+%s
+
+=================
+" "$(print_final_update_result_md 'NONE' "${NONE[@]}")" "$(print_final_update_result_md 'PASS' "${PASS[@]}")" "$(print_final_update_result_md 'FAIL' "${FAIL[@]}")"
 
 # Undo the move we did
 popd 1> /dev/null || exit 4
