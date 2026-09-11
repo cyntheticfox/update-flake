@@ -119,7 +119,7 @@
                     [
                       coreutils
                       curl
-                      nix
+                      lixPackageSets.git.lix
                     ]
                   ))
                 ];
