@@ -4,9 +4,10 @@
 readonly DEFAULT_IFS=$IFS
 
 readonly FLAKE_DIR="${1:-.}"
+readonly START_PWD="$PWD"
 
 # Hardly good practice, but some tools like `nix flake check` don't support flake refs, just the current directory
-pushd "$FLAKE_DIR" 1> /dev/null || exit 3
+cd "$FLAKE_DIR" || exit 3
 
 readonly LOCK_FILE="$FLAKE_DIR/flake.lock"
 readonly FLAKE_FILE="$FLAKE_DIR/flake.nix"
@@ -200,4 +201,4 @@ Update flake script completed.
 " "$(print_final_update_result_md 'NONE' "${NONE[@]}")" "$(print_final_update_result_md 'PASS' "${PASS[@]}")" "$(print_final_update_result_md 'FAIL' "${FAIL[@]}")"
 
 # Undo the move we did
-popd 1> /dev/null || exit 4
+cd "$START_PWD" || exit 4
