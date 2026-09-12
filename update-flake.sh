@@ -7,14 +7,19 @@ readonly FLAKE_DIR="${1:-.}"
 readonly START_PWD="$PWD"
 
 # Hardly good practice, but some tools like `nix flake check` don't support flake refs, just the current directory
+# TODO: Do proper arg parsing
+# TODO: Define exit codes
 cd "$FLAKE_DIR" || exit 3
 
 readonly LOCK_FILE="$FLAKE_DIR/flake.lock"
 readonly FLAKE_FILE="$FLAKE_DIR/flake.nix"
+
+# TODO: Have created via an invocation of another script
 INPUTS_FILE=$(cat "${2:-inputs.csv}")
 INPUTS_FILE="${INPUTS_FILE#*
 }"
 
+# TODO: Document
 print_final_update_result_md() {
     local RESULT_TYPE="$1"
     local INPUTS=''
@@ -88,6 +93,7 @@ for INPUT in $INPUTS_FILE; do
     IFS=$DEFAULT_IFS
     IFS=',' read -ra INPUT_ARRAY <<<"$INPUT"
 
+    # TODO: Imlement via function
     INPUT_NAME="${INPUT_ARRAY[0]}"
     INPUT_HASH="${INPUT_ARRAY[1]}"
     INPUT_TYPE="${INPUT_ARRAY[2]}"
@@ -96,6 +102,7 @@ for INPUT in $INPUTS_FILE; do
 
     printf 'Checking for available update for "%s"\n' "$INPUT_NAME"
 
+    # TODO: Do in a function
     if [ "$INPUT_TYPE" == 'github' ]; then
         RESPONSE=$(curl --location --silent -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "$INPUT_URL")
 
