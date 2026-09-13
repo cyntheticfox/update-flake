@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Usage: $0 /path/to/flakedir /path/to/inputs
 
-readonly DEFAULT_IFS=$IFS
-
 readonly FLAKE_DIR="${1:-.}"
 readonly START_PWD="$PWD"
 
@@ -93,20 +91,17 @@ PASS=()
 NONE=()
 FAIL=()
 
+if [ ! -f "$INPUTS_FILE" ]; then
+    printf 'ERR: File "%s" not found' "$INPUTS_FILE"
+    exit 12
+fi
+
 # NOTE: No point in making this parallel as Nix will just complain... I think
-NEWLINE_IFS='
-'
+while IFS=, read -r INPUT_NAME INPUT_HASH INPUT_TYPE INPUT_URL; do
+    if [ "$INPUT_NAME" = "$INPUT_NAME_HEADER" ]; then
+        continue
+    fi
 
-IFS=$NEWLINE_IFS
-for INPUT in $INPUTS_FILE; do
-    IFS=$DEFAULT_IFS
-    IFS=',' read -ra INPUT_ARRAY <<<"$INPUT"
-
-    # TODO: Imlement via function
-    INPUT_NAME="${INPUT_ARRAY[0]}"
-    INPUT_HASH="${INPUT_ARRAY[1]}"
-    INPUT_TYPE="${INPUT_ARRAY[2]}"
-    INPUT_URL="${INPUT_ARRAY[3]}"
     FOUND_HASH=''
 
     printf 'Checking for available update for "%s"\n' "$INPUT_NAME"
@@ -198,7 +193,7 @@ for INPUT in $INPUTS_FILE; do
     fi
 
     PASS+=("$INPUT_NAME")
-done
+done < "$INPUTS_FILE"
 
 # Assuming a reasonable max of 2
 printf "
