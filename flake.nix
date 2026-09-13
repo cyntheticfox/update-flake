@@ -32,7 +32,7 @@
         checks = self.packages.${system};
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [ shellcheck dash bash jq ];
+          packages = with pkgs; [ shellcheck busybox-sandbox-shell jq ];
         };
 
         packages =
@@ -107,8 +107,8 @@
               };
 
             update-flake =
-              pkgs.writers.writeBashBin "update-flake" {
-                check = "${lib.getExe pkgs.shellcheck} --shell=bash";
+              pkgs.writers.writeDashBin "update-flake" {
+                check = "${lib.getExe pkgs.shellcheck} --shell=sh";
 
                 makeWrapperArgs = [
                   "--prefix"

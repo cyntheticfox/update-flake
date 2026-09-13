@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Usage: $0 /path/to/flakedir /path/to/inputs
 
 readonly FLAKE_DIR="${1:-.}"
@@ -13,8 +13,28 @@ readonly LOCK_FILE="$FLAKE_DIR/flake.lock"
 readonly FLAKE_FILE="$FLAKE_DIR/flake.nix"
 
 # TODO: Have created via an invocation of another script
-INPUTS_FILE="${2:-$FLAKE_DIR/inputs.csv}"
+readonly INPUTS_FILE="${2:-$FLAKE_DIR/inputs.csv}"
 readonly INPUT_NAME_HEADER='input'
+
+### join_str()
+#
+# Parameters:
+#   - `$1` - str;Variable name to add the string to
+#   - `$2` - str;String to add to the end of the variable, after the delimiter
+#   - `$3` - str;Delimiter to add in-between each element
+#
+# Return: None
+#
+# Side Effects:
+#   - Adds `$2` onto the end of the variable named `$1` with `$3` in between (but not at the start)
+#
+join_str() {
+    if [ -n "$(eval "printf '%s' \"\${${1:?join_str() called without variable to set}}\"")" ]; then
+        eval "$1=\${$1}${3:-,}"
+    fi
+
+    eval "$1=\${$1}\${2:?join_str() called without string to add}"
+}
 
 ### print_final_update_result_md()
 #
@@ -28,13 +48,17 @@ readonly INPUT_NAME_HEADER='input'
 #   - Prints a Markdown-document-style results screen to stdout
 #
 print_final_update_result_md() {
-    local RESULT_TYPE="${1:?No input passed to print_final_update_result_md()}"
-    local INPUTS=''
-    local COUNT=0
-    local INPUT_STR='input'
-    local HEADER=''
+    RESULT_TYPE="${1:?No input passed to print_final_update_result_md()}"
+    INPUTS=''
+    COUNT=0
+    INPUT_STR='input'
+    HEADER=''
+    DESC=''
 
-    shift 1
+    IFS=,
+    # Explicitly relying on word splitting
+    # shellcheck disable=SC2086
+    set -- $2
 
     while [ -n "$1" ]; do
         INPUTS="$(printf '%s\n- %s' "$INPUTS" "$1")"
@@ -72,7 +96,7 @@ print_final_update_result_md() {
 # TODO: Waiting on https://github.com/NixOS/nix/issues/6453#issuecomment-1518117282 to ignore custom outputs
 # TODO: Waiting on https://github.com/NixOS/nix/issues/7230 for hiding saved value use
 
-EXTRA_EXPERIMENTAL_FEATURES="$(nix -L --extra-experimental-features 'nix-command' eval --read-only --file "$FLAKE_FILE" 'nixConfig.extra-experimental-features' --raw || printf '%s' 'flakes nix-command')"
+EXTRA_EXPERIMENTAL_FEATURES="$(nix -L --extra-experimental-features 'nix-command' eval --read-only --file "$FLAKE_FILE" 'nixConfig.extra-experimental-features' --raw 2>/dev/null || printf '%s' 'flakes nix-command')"
 readonly EXTRA_EXPERIMENTAL_FEATURES="${EXTRA_EXPERIMENTAL_FEATURES%%
 }"
 
@@ -87,9 +111,9 @@ elif [ ! -w "$LOCK_FILE" ]; then
     exit 8
 fi
 
-PASS=()
-NONE=()
-FAIL=()
+PASS=''
+NONE=''
+FAIL=''
 
 if [ ! -f "$INPUTS_FILE" ]; then
     printf 'ERR: File "%s" not found' "$INPUTS_FILE"
@@ -107,7 +131,7 @@ while IFS=, read -r INPUT_NAME INPUT_HASH INPUT_TYPE INPUT_URL; do
     printf 'Checking for available update for "%s"\n' "$INPUT_NAME"
 
     # TODO: Do in a function
-    if [ "$INPUT_TYPE" == 'github' ]; then
+    if [ "$INPUT_TYPE" = 'github' ]; then
         RESPONSE=$(curl --location --silent -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "$INPUT_URL")
 
         # Pretty sure this is how to do it...
@@ -115,38 +139,38 @@ while IFS=, read -r INPUT_NAME INPUT_HASH INPUT_TYPE INPUT_URL; do
         if [ $? -ne 0 ]; then
             printf 'Unable to check input "%s". Possible rate limiting?\n' "$INPUT_NAME"
 
-            FAIL+=("$INPUT_NAME: Resolution failed")
+            join_str 'FAIL' "$INPUT_NAME: Resolution failed"
 
             continue
         fi
 
         FOUND_HASH="$(printf '%s' "$RESPONSE" | jq '.sha' -r)"
 
-        if [ "$FOUND_HASH" == "$INPUT_HASH" ]; then
+        if [ "$FOUND_HASH" = "$INPUT_HASH" ]; then
             printf 'No update available for "%s".\n' "$INPUT_NAME"
 
-            NONE+=("$INPUT_NAME")
+            join_str 'NONE' "$INPUT_NAME"
 
             continue
         fi
-    elif [ "$INPUT_TYPE" == 'gitlab' ] || [ "$INPUT_TYPE" == 'sourcehut' ]; then
+    elif [ "$INPUT_TYPE" = 'gitlab' ] || [ "$INPUT_TYPE" = 'sourcehut' ]; then
         RESPONSE=$(curl --location --silent -H 'Accept: application/json' "$INPUT_URL")
 
         # shellcheck disable=SC2181
         if [ $? -ne 0 ]; then
             printf 'Unable to check input "%s". Possible rate limiting?\n' "$INPUT_NAME"
 
-            FAIL+=("$INPUT_NAME: Resolution failed")
+            join_str 'FAIL' "$INPUT_NAME: Resolution failed"
 
             continue
         fi
 
         FOUND_HASH="$(printf '%s' "$RESPONSE" | jq '.id' -r)"
 
-        if [ "$FOUND_HASH" == "$INPUT_HASH" ]; then
+        if [ "$FOUND_HASH" = "$INPUT_HASH" ]; then
             printf 'No update available for "%s".\n' "$INPUT_NAME"
 
-            PASS+=("$INPUT_NAME")
+            join_str 'PASS' "$INPUT_NAME"
 
             continue
         fi
@@ -158,11 +182,11 @@ while IFS=, read -r INPUT_NAME INPUT_HASH INPUT_TYPE INPUT_URL; do
 
     printf 'Attempting to update "%s".\n' "$INPUT_NAME"
 
-    if ! nix -L --extra-experimental-features "$EXTRA_EXPERIMENTAL_FEATURES" flake update "${GENERAL_FLAGS[@]}" --flake "$FLAKE_DIR" "$INPUT_NAME" --accept-flake-config --no-warn-dirty; then
+    if ! nix -L --extra-experimental-features "$EXTRA_EXPERIMENTAL_FEATURES" flake update --flake "$FLAKE_DIR" "$INPUT_NAME" --accept-flake-config --no-warn-dirty; then
         printf 'Unable to update input "%s".\n' "$INPUT_NAME"
         printf '%s' "$ORIGINAL_FLAKE" >"$LOCK_FILE"
 
-        FAIL+=("$INPUT_NAME: Update failed")
+        join_str 'FAIL' "$INPUT_NAME: Update failed"
 
         continue
     fi
@@ -175,7 +199,7 @@ while IFS=, read -r INPUT_NAME INPUT_HASH INPUT_TYPE INPUT_URL; do
     #     printf 'Check eval for updated input "%s" failed.\n' "$INPUT_NAME"
     #     printf '%s' "$ORIGINAL_FLAKE" >$LOCK_FILE
     #
-    #     FAIL+=("$INPUT_NAME: Check eval failed")
+    #     join_str 'FAIL' "$INPUT_NAME: Check eval failed"
     #
     #     continue
     # fi
@@ -187,12 +211,12 @@ while IFS=, read -r INPUT_NAME INPUT_HASH INPUT_TYPE INPUT_URL; do
         printf 'Check build for updated input "%s" failed.\n' "$INPUT_NAME"
         printf '%s' "$ORIGINAL_FLAKE" >"$LOCK_FILE"
 
-        FAIL+=("$INPUT_NAME: Check build failed")
+        join_str 'FAIL' "$INPUT_NAME: Check build failed"
 
         continue
     fi
 
-    PASS+=("$INPUT_NAME")
+    join_str 'PASS' "$INPUT_NAME"
 done < "$INPUTS_FILE"
 
 # Assuming a reasonable max of 2
@@ -209,7 +233,7 @@ Update flake script completed.
 %s
 
 =================
-" "$(print_final_update_result_md 'NONE' "${NONE[@]}")" "$(print_final_update_result_md 'PASS' "${PASS[@]}")" "$(print_final_update_result_md 'FAIL' "${FAIL[@]}")"
+" "$(print_final_update_result_md 'NONE' "$NONE")" "$(print_final_update_result_md 'PASS' "$PASS")" "$(print_final_update_result_md 'FAIL' "$FAIL")"
 
 # Undo the move we did
 cd "$START_PWD" || exit 4
