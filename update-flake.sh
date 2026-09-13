@@ -15,13 +15,22 @@ readonly LOCK_FILE="$FLAKE_DIR/flake.lock"
 readonly FLAKE_FILE="$FLAKE_DIR/flake.nix"
 
 # TODO: Have created via an invocation of another script
-INPUTS_FILE=$(cat "${2:-inputs.csv}")
-INPUTS_FILE="${INPUTS_FILE#*
-}"
+INPUTS_FILE="${2:-$FLAKE_DIR/inputs.csv}"
+readonly INPUT_NAME_HEADER='input'
 
-# TODO: Document
+### print_final_update_result_md()
+#
+# Parameters:
+#   - `$1` - enum; either 'FAIL', 'NONE', or 'PASS'
+#   - `$2+` - str; input, possibly with failure mode
+#
+# Return: None
+#
+# Side Effects:
+#   - Prints a Markdown-document-style results screen to stdout
+#
 print_final_update_result_md() {
-    local RESULT_TYPE="$1"
+    local RESULT_TYPE="${1:?No input passed to print_final_update_result_md()}"
     local INPUTS=''
     local COUNT=0
     local INPUT_STR='input'
